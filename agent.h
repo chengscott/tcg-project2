@@ -70,16 +70,13 @@ protected:
 class weight_agent : public agent {
 public:
   weight_agent(const std::string &args = "") : agent(args), alpha(0.1f) {
-    if (meta.find("load") != meta.end())
-      load_weights();
     if (meta.find("alpha") != meta.end())
       alpha = float(meta["alpha"]);
-    has_save_ = (meta.find("save") != meta.end());
   }
   virtual ~weight_agent() = default;
 
 protected:
-  virtual void load_weights() {
+  void load_weights() {
     std::ifstream in(meta.at("load"), std::ios::in | std::ios::binary);
     if (!in.is_open()) {
       return;
@@ -92,10 +89,7 @@ protected:
     }
     in.close();
   }
-  virtual void save_weights() const {
-    if (!has_save_) {
-      return;
-    }
+  void save_weights() const {
     std::ofstream out(meta.at("save"),
                       std::ios::out | std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {
@@ -136,7 +130,6 @@ protected:
 protected:
   std::vector<pattern> net;
   float alpha;
-  bool has_save_;
 };
 
 class tdl_agent : public weight_agent {
@@ -148,8 +141,13 @@ public:
     net.emplace_back(pattern({0, 1, 2, 4, 5, 6}));
     net.emplace_back(pattern({4, 5, 6, 8, 9, 10}));
     path_.reserve(20000);
+    if (meta.find("load") != meta.end())
+      load_weights();
   }
-  ~tdl_agent() { save_weights(); }
+  ~tdl_agent() {
+    if (meta.find("save") != meta.end())
+      save_weights();
+  }
 
   virtual action take_action(const board &before, unsigned) {
     board after[] = {board(before), board(before), board(before),

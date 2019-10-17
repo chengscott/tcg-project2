@@ -17,4 +17,4 @@ check:
 	clang-tidy threes.cpp -checks=bugprone-*,clang-analyzer-*,modernize-*,performance-*,readability-* -- -std=c++11
 
 clean:
-	rm -rf stat.txt threes action agent board episode statistic *.dSYM
+	rm -rf threes stat.txt weights.bin action agent board episode statistic pattern *.dSYM

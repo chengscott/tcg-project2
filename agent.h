@@ -1,7 +1,7 @@
 #pragma once
 #include "action.h"
 #include "board.h"
-#include "weight.h"
+#include "pattern.h"
 #include <algorithm>
 #include <array>
 #include <fstream>
@@ -21,7 +21,7 @@ public:
       meta[key] = {value};
     }
   }
-  virtual ~agent() {}
+  virtual ~agent() = default;
   virtual void open_episode(const std::string &flag = "") {}
   virtual void close_episode(const std::string &flag = "") {}
   virtual action take_action(const board &, unsigned) { return action(); }
@@ -69,65 +69,130 @@ protected:
  */
 class weight_agent : public agent {
 public:
-  weight_agent(const std::string &args = "") : agent(args) {
-    if (meta.find("init") !=
-        meta.end()) // pass init=... to initialize the weight
-      init_weights(meta["init"]);
-    if (meta.find("load") !=
-        meta.end()) // pass load=... to load from a specific file
-      load_weights(meta["load"]);
+  weight_agent(const std::string &args = "") : agent(args), alpha(0.1f) {
+    if (meta.find("load") != meta.end())
+      load_weights();
+    if (meta.find("alpha") != meta.end())
+      alpha = float(meta["alpha"]);
+    has_save_ = (meta.find("save") != meta.end());
   }
-  virtual ~weight_agent() {
-    if (meta.find("save") !=
-        meta.end()) // pass save=... to save to a specific file
-      save_weights(meta["save"]);
-  }
+  virtual ~weight_agent() = default;
 
 protected:
-  virtual void init_weights(const std::string &info) {
-    net.emplace_back(65536); // create an empty weight table with size 65536
-    net.emplace_back(65536); // create an empty weight table with size 65536
-    // now net.size() == 2; net[0].size() == 65536; net[1].size() == 65536
-  }
-  virtual void load_weights(const std::string &path) {
-    std::ifstream in(path, std::ios::in | std::ios::binary);
-    if (!in.is_open())
-      std::exit(-1);
+  virtual void load_weights() {
+    std::ifstream in(meta.at("load"), std::ios::in | std::ios::binary);
+    if (!in.is_open()) {
+      return;
+    }
     uint32_t size;
     in.read(reinterpret_cast<char *>(&size), sizeof(size));
     net.resize(size);
-    for (weight &w : net)
-      in >> w;
+    for (auto &p : net) {
+      in >> p;
+    }
     in.close();
   }
-  virtual void save_weights(const std::string &path) {
-    std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
-    if (!out.is_open())
-      std::exit(-1);
+  virtual void save_weights() const {
+    if (!has_save_) {
+      return;
+    }
+    std::ofstream out(meta.at("save"),
+                      std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+      return;
+    }
     uint32_t size = net.size();
     out.write(reinterpret_cast<char *>(&size), sizeof(size));
-    for (weight &w : net)
-      out << w;
+    for (auto &p : net) {
+      out << p;
+    }
     out.close();
   }
 
 protected:
-  std::vector<weight> net;
-};
-
-/**
- * base agent for agents with a learning rate
- */
-class learning_agent : public agent {
-public:
-  learning_agent(const std::string &args = "") : agent(args), alpha(0.1f) {
-    if (meta.find("alpha") != meta.end())
-      alpha = float(meta["alpha"]);
+  /**
+   * accumulate the total value of given state
+   */
+  float estimate(const board &b) const {
+    float value = 0;
+    for (auto &p : net) {
+      value += p.estimate(b);
+    }
+    return value;
   }
-  virtual ~learning_agent() {}
+
+  /**
+   * update the value of given state and return its new value
+   */
+  float update(const board &b, float u) {
+    float u_split = u / net.size();
+    float value = 0;
+    for (auto &p : net) {
+      value += p.update(b, u_split);
+    }
+    return value;
+  }
 
 protected:
+  std::vector<pattern> net;
   float alpha;
+  bool has_save_;
+};
+
+class tdl_agent : public weight_agent {
+public:
+  tdl_agent(const std::string &args = "")
+      : weight_agent("name=tdl role=player " + args) {
+    net.emplace_back(pattern({0, 1, 2, 3, 4, 5}));
+    net.emplace_back(pattern({4, 5, 6, 7, 8, 9}));
+    net.emplace_back(pattern({0, 1, 2, 4, 5, 6}));
+    net.emplace_back(pattern({4, 5, 6, 8, 9, 10}));
+    path_.reserve(20000);
+  }
+  ~tdl_agent() { save_weights(); }
+
+  virtual action take_action(const board &before, unsigned) {
+    board after[] = {board(before), board(before), board(before),
+                     board(before)};
+    board::reward_t reward[] = {after[0].slide(0), after[1].slide(1),
+                                after[2].slide(2), after[3].slide(3)};
+    float value[] = {
+        reward[0] == -1 ? -1 : reward[0] + estimate(after[0]),
+        reward[1] == -1 ? -1 : reward[1] + estimate(after[1]),
+        reward[2] == -1 ? -1 : reward[2] + estimate(after[2]),
+        reward[3] == -1 ? -1 : reward[3] + estimate(after[3]),
+    };
+    float *max_value = std::max_element(value, value + 4);
+    if (*max_value != -1) {
+      unsigned idx = max_value - value;
+      path_.emplace_back(state({.before = before,
+                                .after = after[idx],
+                                .op = idx,
+                                .reward = static_cast<float>(reward[idx]),
+                                .value = *max_value}));
+      return action::slide(idx);
+    }
+    path_.emplace_back(state());
+    return action();
+  }
+
+  void update_episode() {
+    float exact = 0;
+    for (path_.pop_back(); path_.size(); path_.pop_back()) {
+      state &move = path_.back();
+      float error = exact - (move.value - move.reward);
+      exact = move.reward + update(move.after, alpha * error);
+    }
+    path_.clear();
+  }
+
+private:
+  struct state {
+    board before, after;
+    unsigned op;
+    float reward, value;
+  };
+  std::vector<state> path_;
 };
 
 template <class _IntType, size_t _Size> class bag_int_distribution {
@@ -146,25 +211,6 @@ private:
   std::array<_IntType, _Size> bag_;
   size_t index_ = _Size;
 };
-
-/*struct bitbag_int_distribution {
-  void reset() { bag = 0; }
-  board::tile_t operator()(std::default_random_engine engine) {
-    if (bag == 0) {
-      std::shuffle(std::begin(index), std::end(index), engine);
-      bag = 0b111;
-    }
-    for (unsigned idx : index) {
-      if ((bag >> idx) & 1u) {
-        bag &= ~(1u << idx);
-        return idx + 1u;
-      }
-    }
-    assert(false);
-  }
-  unsigned bag;
-  std::array<unsigned, 3> index{0u, 1u, 2u};
-};*/
 
 /**
  * random environment

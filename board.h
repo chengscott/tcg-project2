@@ -10,7 +10,7 @@ public:
   using tile_t = uint8_t;
   using reward_t = int;
 
-  board(board_t rhs = 0u) : raw_(rhs) {}
+  explicit board(board_t rhs = 0u) : raw_(rhs) {}
   board(const board &) = default;
   board &operator=(const board &) = default;
   ~board() = default;
@@ -57,6 +57,26 @@ public:
     return -1;
   }
 
+  void rotate_clockwise(size_t r) {
+    switch ((r + 4) % 4) {
+    default:
+    case 0:
+      break;
+    case 1:
+      transpose();
+      mirror();
+      break;
+    case 2:
+      mirror();
+      flip();
+      break;
+    case 3:
+      transpose();
+      flip();
+      break;
+    }
+  }
+
 private:
   reward_t slide_left() {
     board_t cur = 0u, prev = raw_;
@@ -91,7 +111,7 @@ private:
     return score;
   }
 
-private:
+public:
   /**
    * swap row and column
    * +------------------------+       +------------------------+

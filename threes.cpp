@@ -51,7 +51,8 @@ int main(int argc, const char *argv[]) {
     summary |= stat.is_finished();
   }
 
-  deep_greedy_player play(play_args);
+  // deep_greedy_player play(play_args);
+  tdl_agent play(play_args);
   rndenv evil(evil_args);
 
   while (!stat.is_finished()) {
@@ -80,6 +81,8 @@ int main(int argc, const char *argv[]) {
     }
     agent &win = game.last_turns(play, evil);
     stat.close_episode(win.name());
+
+    play.update_episode();
 
     play.close_episode(win.name());
     evil.close_episode(win.name());

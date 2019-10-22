@@ -154,14 +154,15 @@ public:
                      board(before)};
     board::reward_t reward[] = {after[0].slide(0), after[1].slide(1),
                                 after[2].slide(2), after[3].slide(3)};
+    constexpr const float ninf = -std::numeric_limits<float>::max();
     float value[] = {
-        reward[0] == -1 ? -1 : reward[0] + estimate(after[0]),
-        reward[1] == -1 ? -1 : reward[1] + estimate(after[1]),
-        reward[2] == -1 ? -1 : reward[2] + estimate(after[2]),
-        reward[3] == -1 ? -1 : reward[3] + estimate(after[3]),
+        reward[0] == -1 ? ninf : reward[0] + estimate(after[0]),
+        reward[1] == -1 ? ninf : reward[1] + estimate(after[1]),
+        reward[2] == -1 ? ninf : reward[2] + estimate(after[2]),
+        reward[3] == -1 ? ninf : reward[3] + estimate(after[3]),
     };
     float *max_value = std::max_element(value, value + 4);
-    if (*max_value != -1) {
+    if (*max_value > ninf) {
       unsigned idx = max_value - value;
       path_.emplace_back(state({.before = before,
                                 .after = after[idx],

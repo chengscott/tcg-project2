@@ -199,7 +199,7 @@ private:
           elem[c] = 3u;
           reward = 3u;
           break;
-        } else if (rc > 2u && rc == rcn) {
+        } else if (rc > 2u && rc < 14u && rc == rcn) {
           m = c;
           elem[c] = ++rc;
           reward = 3u * (1 << (rc - 3));
